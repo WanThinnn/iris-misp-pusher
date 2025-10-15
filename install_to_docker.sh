@@ -20,23 +20,24 @@ rm -rf build dist *.egg-info
 python3 setup.py bdist_wheel
 
 WHEEL_FILE=$(ls dist/*.whl)
+WHEEL_NAME=$(basename "$WHEEL_FILE")
 echo "Built: $WHEEL_FILE"
 
 # Copy to app container
 echo "[2/5] Copying to iriswebapp_app container..."
-sudo docker cp "$WHEEL_FILE" iriswebapp_app:/tmp/iris_misp_pusher.whl
+sudo docker cp "$WHEEL_FILE" iriswebapp_app:/tmp/
 
 # Copy to worker container
 echo "[3/5] Copying to iriswebapp_worker container..."
-sudo docker cp "$WHEEL_FILE" iriswebapp_worker:/tmp/iris_misp_pusher.whl
+sudo docker cp "$WHEEL_FILE" iriswebapp_worker:/tmp/
 
 # Install in app container
 echo "[4/5] Installing in iriswebapp_app..."
-sudo docker exec iriswebapp_app pip3 install --force-reinstall /tmp/iris_misp_pusher.whl
+sudo docker exec iriswebapp_app /opt/venv/bin/pip install --force-reinstall "/tmp/$WHEEL_NAME"
 
 # Install in worker container
 echo "[5/5] Installing in iriswebapp_worker..."
-sudo docker exec iriswebapp_worker pip3 install --force-reinstall /tmp/iris_misp_pusher.whl
+sudo docker exec iriswebapp_worker /opt/venv/bin/pip install --force-reinstall "/tmp/$WHEEL_NAME"
 
 echo ""
 echo "✅ Installation complete!"
