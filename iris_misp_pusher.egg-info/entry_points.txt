@@ -1,2 +1,0 @@
-[iris_modules]
-MISP_Pusher = iris_misp_pusher.IrisMispInterface:IrisMispInterface
