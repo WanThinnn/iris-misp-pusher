@@ -173,18 +173,24 @@ def update_suricata_rules(outfile, values):
     except Exception as e:
         log(f"x Error writing Suricata rules: {e}")
 
+
 def main():
     log(f"=== Start fetch from MISP (event {EVENT_ID}) ===")
     
+    # 1. Khởi tạo set chứa tất cả IP cần block
+    all_block_ips = set()
+
     # Fetch IP sources
     src_ips = fetch_values_from_misp("ip-src", validate_ip=True)
     if src_ips:
         update_output_file(OUTPUT_SRC, src_ips, validate_ip=True)
+        all_block_ips.update(src_ips)  # <--- Gộp vào danh sách tổng
     
     # Fetch IP destinations
     dst_ips = fetch_values_from_misp("ip-dst", validate_ip=True)
     if dst_ips:
         update_output_file(OUTPUT_DST, dst_ips, validate_ip=True)
+        all_block_ips.update(dst_ips)  # <--- Gộp tiếp vào danh sách tổng
     
     # Fetch domains
     domains = fetch_values_from_misp("domain", validate_ip=False)
@@ -196,11 +202,14 @@ def main():
     if urls:
         update_output_file(OUTPUT_URL, urls, validate_ip=False)
 
-    # Generate Suricata rules from IP sources
-    if src_ips:   
-        update_suricata_rules(OUTPUT_SURICATA, src_ips)
-    if dst_ips:   
-        update_suricata_rules(OUTPUT_SURICATA, dst_ips)
+    # --- SỬA ĐOẠN NÀY ---
+    # Generate Suricata rules from BOTH src and dst IPs (One-shot write)
+    if all_block_ips:
+        # Gọi hàm 1 lần duy nhất với danh sách đã gộp
+        update_suricata_rules(OUTPUT_SURICATA, all_block_ips)
+    else:
+        log("No IPs found to generate Suricata rules.")
+
     log("=== Done ===")
 
 
