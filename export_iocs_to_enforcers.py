@@ -130,29 +130,48 @@ def update_output_file(outfile, values, validate_ip=True):
         log(f"[!] Lỗi ghi file {outfile}: {e}")
 
 def update_suricata_rules(outfile, values):
-    """Tạo file rules cho Suricata từ danh sách IP"""
-    # SID (Signature ID) bắt đầu từ 10000000 để tránh trùng rules mặc định
+    """
+    Tạo file rules cho Suricata.
+    Chỉ ghi file nếu nội dung thực sự thay đổi để tránh Spam log và I/O Disk.
+    """
     start_sid = 10000000
+    new_content = ""
     
-    # Đảm bảo thư mục tồn tại
-    os.makedirs(os.path.dirname(outfile), exist_ok=True)
-    
+    # 1. Tạo nội dung mới trong bộ nhớ (RAM) trước
+    # Sắp xếp để đảm bảo thứ tự IP và SID luôn cố định
+    for index, ip in enumerate(sorted(values)):
+        sid = start_sid + index
+        # Lưu ý: Dùng dấu <> để chặn 2 chiều
+        rule = f'drop ip {ip} any <> any any (msg:"ET CTI Blocklist IP {ip}"; reference:url,misp.cyberfortress.local; sid:{sid}; rev:1;)\n'
+        new_content += rule
+
+    # 2. Đọc nội dung file cũ (nếu tồn tại)
+    current_content = ""
+    if os.path.exists(outfile):
+        try:
+            with open(outfile, 'r') as f:
+                current_content = f.read()
+        except:
+            pass # Nếu lỗi đọc file thì coi như file cũ rỗng
+
+    # 3. So sánh: Nếu giống hệt nhau thì BỎ QUA
+    if new_content == current_content:
+        # Log màu xám hoặc thông báo skip
+        log(f"Suricata rules up-to-date ({len(values)} rules). Skipped.")
+        return # <--- Thoát hàm luôn, không ghi file, không báo log "Generated"
+
+    # 4. Nếu khác nhau thì mới GHI đè
     try:
         with open(outfile, "w") as f:
-            for index, ip in enumerate(sorted(values)):
-                sid = start_sid + index
-                # Cấu trúc Rule: drop ip <IP> any -> any any (...)
-                # msg: Thông báo hiện trên Log
-                rule = f'drop ip {ip} any <> any any (msg:"ET CTI Blocklist IP {ip}"; reference:url,misp.cyberfortress.local; sid:{sid}; rev:1;)\n'
-                f.write(rule)
-                
+            f.write(new_content)
+        
+        # Set quyền lại cho chắc
         os.system(f"chown {WWW_USER} {outfile} 2>/dev/null || true")
-        # Đặt quyền để Suricata có thể đọc được qua HTTP
         os.system(f"chmod 644 {outfile} 2>/dev/null || true")
-        log(f"✓ Generated Suricata Rules: {outfile} ({len(values)} rules)")
-    
+        
+        log(f"✓ Generated NEW Suricata Rules: {outfile} ({len(values)} rules)")
     except Exception as e:
-        log(f"[!] Lỗi ghi Suricata rules {outfile}: {e}")
+        log(f"x Error writing Suricata rules: {e}")
 
 def main():
     log(f"=== Start fetch from MISP (event {EVENT_ID}) ===")
@@ -180,7 +199,8 @@ def main():
     # Generate Suricata rules from IP sources
     if src_ips:   
         update_suricata_rules(OUTPUT_SURICATA, src_ips)
-
+    if dst_ips:   
+        update_suricata_rules(OUTPUT_SURICATA, dst_ips)
     log("=== Done ===")
 
 
