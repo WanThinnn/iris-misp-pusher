@@ -13,9 +13,13 @@ import requests
 import re
 import ipaddress
 import urllib3
+import os
 from datetime import datetime
 
 # --- Constants ---
+IPV4_REGEX = re.compile(
+    r"^((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)$"
+)
 # Ánh xạ IRIS → MISP type + category (event_id sẽ được truyền vào từ config)
 IOC_TYPE_MAP = {
     "ip-src": ("ip-src", "Network activity"), "ip-dst": ("ip-dst", "Network activity"),
@@ -26,6 +30,7 @@ IOC_TYPE_MAP = {
     "sha3-512": ("sha3-512", "Payload delivery"), "filename": ("filename", "Payload delivery"),
     "file-path": ("filename", "Payload delivery"), "filepath": ("filename", "Payload delivery"),
     "email-src": ("email-src", "Payload delivery"), "email-dst": ("email-dst", "Payload delivery"),
+    "uri": ("url", "Network activity"), "link": ("url", "Network activity"),
 }
 
 # --- Utility Functions ---
@@ -110,6 +115,82 @@ def classify_ioc(value, event_ip_id, event_hash_id, iris_type=None, ioc_tags=Non
         return misp_type, event_hash_id, "Payload delivery"
 
     return None, None, None
+
+
+# ===== File Export Functions =====
+def fetch_values_from_misp(logger, attr_type, event_id, misp_url, misp_key, verify_ssl):
+    """Gọi API /events/restSearch để lấy list values theo type"""
+    url = f"{misp_url}/events/restSearch"
+    headers = {
+        "Authorization": misp_key,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "returnFormat": "json",
+        "eventid": event_id,
+        "type": attr_type,
+        "to_ids": True,
+        "enforceWarninglist": True,
+    }
+
+    try:
+        if not verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        resp = requests.post(url, headers=headers, json=payload, verify=verify_ssl, timeout=10)
+        resp.raise_for_status()
+    except Exception as e:
+        log(logger, f"[!] Lỗi gọi MISP ({attr_type}): {e}")
+        return set()
+
+    data = resp.json()
+    values = set()
+    for evt in data.get("response", []):
+        event = evt.get("Event", {})
+        for attr in event.get("Attribute", []):
+            if attr.get("type") == attr_type and attr.get("to_ids"):
+                val = attr.get("value", "").strip()
+                if val:
+                    # Chỉ validate IP nếu là ip-src hoặc ip-dst
+                    if attr_type in ["ip-src", "ip-dst"]:
+                        if IPV4_REGEX.match(val):
+                            values.add(val)
+                    else:
+                        values.add(val)
+
+    log(logger, f"Fetched {len(values)} valid values for {attr_type}")
+    return values
+
+
+def update_output_file(logger, outfile, values, www_user="www-data:www-data"):
+    """Hợp nhất values mới + cũ, loại trùng, rồi ghi ra file"""
+    try:
+        os.makedirs(os.path.dirname(outfile), exist_ok=True)
+    except Exception as e:
+        log(logger, f"[!] Cannot create directory for {outfile}: {e}")
+        return
+
+    old_values = set()
+    if os.path.exists(outfile):
+        try:
+            with open(outfile, "r") as f:
+                old_values = set(line.strip() for line in f if line.strip())
+        except Exception as e:
+            log(logger, f"[!] Cannot read {outfile}: {e}")
+
+    all_values = old_values.union(values)
+    try:
+        with open(outfile, "w") as f:
+            for val in sorted(all_values):
+                f.write(val + "\n")
+    except Exception as e:
+        log(logger, f"[!] Cannot write to {outfile}: {e}")
+        return
+
+    os.system(f"chown {www_user} {outfile} 2>/dev/null || true")
+    os.system(f"chmod 644 {outfile} 2>/dev/null || true")
+
+    log(logger, f"✓ Updated {outfile}: {len(all_values)} total (added {len(all_values - old_values)})")
 
 
 # import traceback

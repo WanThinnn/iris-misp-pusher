@@ -112,10 +112,58 @@ class IrisMispInterface(IrisModuleInterface):
         msg = f"Push to MISP completed: {newly_added_count} added, {skipped_count} skipped (already exist), {error_count} failed."
         self.log.info(msg)
         
+        # Update output files if configured and successful
+        if newly_added_count > 0:
+            self._update_output_files(conf, event_ip_id, event_hash_id, misp_url, misp_key, verify_ssl)
+        
         if newly_added_count > 0 or skipped_count > 0:
             return InterfaceStatus.I2Success(logs=list(self.message_queue), data=data)
         else:
             return InterfaceStatus.I2Error(logs=list(self.message_queue), data=msg)
+    
+    def _update_output_files(self, conf, event_ip_id, event_hash_id, misp_url, misp_key, verify_ssl):
+        """Cập nhật các file output với dữ liệu từ MISP sau khi push thành công"""
+        www_user = conf.get('www_user', 'www-data:www-data')
+        
+        # Update IP-SRC file
+        output_src = conf.get('output_src_path', '').strip()
+        if output_src:
+            self.log.info(f"Updating output file: {output_src}")
+            src_ips = misp_handler.fetch_values_from_misp(
+                self.log, "ip-src", event_ip_id, misp_url, misp_key, verify_ssl
+            )
+            if src_ips:
+                misp_handler.update_output_file(self.log, output_src, src_ips, www_user)
+        
+        # Update IP-DST file
+        output_dst = conf.get('output_dst_path', '').strip()
+        if output_dst:
+            self.log.info(f"Updating output file: {output_dst}")
+            dst_ips = misp_handler.fetch_values_from_misp(
+                self.log, "ip-dst", event_ip_id, misp_url, misp_key, verify_ssl
+            )
+            if dst_ips:
+                misp_handler.update_output_file(self.log, output_dst, dst_ips, www_user)
+        
+        # Update Domain file
+        output_domain = conf.get('output_domain_path', '').strip()
+        if output_domain:
+            self.log.info(f"Updating output file: {output_domain}")
+            domains = misp_handler.fetch_values_from_misp(
+                self.log, "domain", event_ip_id, misp_url, misp_key, verify_ssl
+            )
+            if domains:
+                misp_handler.update_output_file(self.log, output_domain, domains, www_user)
+        
+        # Update URL file
+        output_url = conf.get('output_url_path', '').strip()
+        if output_url:
+            self.log.info(f"Updating output file: {output_url}")
+            urls = misp_handler.fetch_values_from_misp(
+                self.log, "url", event_ip_id, misp_url, misp_key, verify_ssl
+            )
+            if urls:
+                misp_handler.update_output_file(self.log, output_url, urls, www_user)
 
 # import traceback
 # from pathlib import Path
