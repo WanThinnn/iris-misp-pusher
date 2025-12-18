@@ -1,24 +1,47 @@
 #!/usr/bin/env python3
-import os, re, json, requests, urllib3
+import os
+import re
+import json
+import requests
+import urllib3
 from datetime import datetime
+from dotenv import load_dotenv
 
-# ======= CẤU HÌNH =======
-API_KEY = "qpo9CK6J2CnTmNo1Au62zmdJfZWsb1KiQKhrc7Kx"
-MISP_URL = "https://misp.cyberfortress.local"
-EVENT_ID = "1808"
+# ======= CẤU HÌNH: LOAD TỪ .ENV =======
+# Xác định đường dẫn file .env (nằm cùng thư mục với script này)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(script_dir, '.env')
 
-OUTPUT_SRC = "/var/www/html/misp-ip-src.txt"
-OUTPUT_DST = "/var/www/html/misp-ip-dst.txt"
-OUTPUT_DOMAIN = "/var/www/html/misp-domains.txt"
-OUTPUT_URL = "/var/www/html/misp-urls.txt"
+# Load file .env
+load_dotenv(dotenv_path=env_path)
 
-VERIFY_SSL = False      # False nếu là self-signed cert
-WWW_USER = "www-data:www-data"
+def get_env(key, default=None):
+    """Hàm wrapper để lấy biến môi trường và báo lỗi nếu thiếu"""
+    val = os.getenv(key, default)
+    if val is None:
+        print(f"[ERROR] Thiếu cấu hình: {key} trong file .env")
+        exit(1)
+    return val
+
+API_KEY = get_env("API_KEY")
+MISP_URL = get_env("MISP_URL")
+EVENT_ID = get_env("EVENT_ID")
+
+OUTPUT_SRC = get_env("OUTPUT_SRC", "/var/www/html/misp-ip-src.txt")
+OUTPUT_DST = get_env("OUTPUT_DST", "/var/www/html/misp-ip-dst.txt")
+OUTPUT_DOMAIN = get_env("OUTPUT_DOMAIN", "/var/www/html/misp-domains.txt")
+OUTPUT_URL = get_env("OUTPUT_URL", "/var/www/html/misp-urls.txt")
+
+# Xử lý biến Boolean từ string trong .env
+verify_ssl_str = get_env("VERIFY_SSL", "False").lower()
+VERIFY_SSL = verify_ssl_str in ("true", "1", "yes")
+
+WWW_USER = get_env("WWW_USER", "www-data:www-data")
 
 IPV4_REGEX = re.compile(
     r"^((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)$"
 )
-# =========================
+# ======================================
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -71,30 +94,39 @@ def fetch_values_from_misp(attr_type, validate_ip=True):
 
 def update_output_file(outfile, values, validate_ip=True):
     """Hợp nhất values mới + cũ, loại trùng, rồi ghi ra file"""
+    # Đảm bảo thư mục tồn tại
     os.makedirs(os.path.dirname(outfile), exist_ok=True)
 
     old_values = set()
     if os.path.exists(outfile):
-        with open(outfile, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    # Chỉ validate IP nếu yêu cầu
-                    if validate_ip:
-                        if IPV4_REGEX.match(line):
+        try:
+            with open(outfile, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        if validate_ip:
+                            if IPV4_REGEX.match(line):
+                                old_values.add(line)
+                        else:
                             old_values.add(line)
-                    else:
-                        old_values.add(line)
+        except Exception as e:
+            log(f"[!] Lỗi đọc file cũ {outfile}: {e}")
 
     all_values = old_values.union(values)
-    with open(outfile, "w") as f:
-        for val in sorted(all_values):
-            f.write(val + "\n")
-
-    os.system(f"chown {WWW_USER} {outfile} 2>/dev/null || true")
-    os.system(f"chmod 644 {outfile} 2>/dev/null || true")
-
-    log(f"✓ Updated {outfile}: {len(all_values)} total (added {len(all_values - old_values)})")
+    
+    try:
+        with open(outfile, "w") as f:
+            for val in sorted(all_values):
+                f.write(val + "\n")
+        
+        # Phân quyền file
+        os.system(f"chown {WWW_USER} {outfile} 2>/dev/null || true")
+        os.system(f"chmod 644 {outfile} 2>/dev/null || true")
+        
+        log(f"✓ Updated {outfile}: {len(all_values)} total (added {len(all_values - old_values)})")
+    
+    except Exception as e:
+        log(f"[!] Lỗi ghi file {outfile}: {e}")
 
 
 def main():
