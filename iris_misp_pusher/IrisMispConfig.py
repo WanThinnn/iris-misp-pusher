@@ -55,46 +55,6 @@ module_configuration = [
             "default": False,
             "mandatory": True,
             "type": "bool"
-        },
-        {
-            "param_name": "output_src_path",
-            "param_human_name": "Output Path for IP-SRC",
-            "param_description": "Path to write ip-src list (e.g., /var/www/html/misp-ip-src.txt). Leave empty to disable.",
-            "default": "",
-            "mandatory": False,
-            "type": "string"
-        },
-        {
-            "param_name": "output_dst_path",
-            "param_human_name": "Output Path for IP-DST",
-            "param_description": "Path to write ip-dst list (e.g., /var/www/html/misp-ip-dst.txt). Leave empty to disable.",
-            "default": "",
-            "mandatory": False,
-            "type": "string"
-        },
-        {
-            "param_name": "output_domain_path",
-            "param_human_name": "Output Path for Domains",
-            "param_description": "Path to write domain list (e.g., /var/www/html/misp-domains.txt). Leave empty to disable.",
-            "default": "",
-            "mandatory": False,
-            "type": "string"
-        },
-        {
-            "param_name": "output_url_path",
-            "param_human_name": "Output Path for URLs",
-            "param_description": "Path to write URL list (e.g., /var/www/html/misp-urls.txt). Leave empty to disable.",
-            "default": "",
-            "mandatory": False,
-            "type": "string"
-        },
-        {
-            "param_name": "www_user",
-            "param_human_name": "WWW User for File Permissions",
-            "param_description": "User:group for chown (e.g., www-data:www-data)",
-            "default": "www-data:www-data",
-            "mandatory": False,
-            "type": "string"
         }
 ]
 
