@@ -1,3 +1,6 @@
+# Environment variables with sensitive data
+.env
+
 __pycache__/
 *.pyc
 
@@ -22,3 +25,5 @@ __pycache__/
 # Custom
 .DS_Store
 iris_misp_pusher.egg-info/
+
+.env

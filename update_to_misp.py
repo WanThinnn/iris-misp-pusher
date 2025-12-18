@@ -31,6 +31,7 @@ OUTPUT_SRC = get_env("OUTPUT_SRC", "/var/www/html/misp-ip-src.txt")
 OUTPUT_DST = get_env("OUTPUT_DST", "/var/www/html/misp-ip-dst.txt")
 OUTPUT_DOMAIN = get_env("OUTPUT_DOMAIN", "/var/www/html/misp-domains.txt")
 OUTPUT_URL = get_env("OUTPUT_URL", "/var/www/html/misp-urls.txt")
+OUTPUT_SURICATA = get_env("OUTPUT_SURICATA", "/var/www/html/misp-blocklist.rules")
 
 # Xử lý biến Boolean từ string trong .env
 verify_ssl_str = get_env("VERIFY_SSL", "False").lower()
@@ -128,6 +129,30 @@ def update_output_file(outfile, values, validate_ip=True):
     except Exception as e:
         log(f"[!] Lỗi ghi file {outfile}: {e}")
 
+def update_suricata_rules(outfile, values):
+    """Tạo file rules cho Suricata từ danh sách IP"""
+    # SID (Signature ID) bắt đầu từ 10000000 để tránh trùng rules mặc định
+    start_sid = 10000000
+    
+    # Đảm bảo thư mục tồn tại
+    os.makedirs(os.path.dirname(outfile), exist_ok=True)
+    
+    try:
+        with open(outfile, "w") as f:
+            for index, ip in enumerate(sorted(values)):
+                sid = start_sid + index
+                # Cấu trúc Rule: drop ip <IP> any -> any any (...)
+                # msg: Thông báo hiện trên Log
+                rule = f'drop ip {ip} any -> any any (msg:"ET CTI Blocklist IP {ip}"; reference:url,misp.cyberfortress.local; sid:{sid}; rev:1;)\n'
+                f.write(rule)
+                
+        os.system(f"chown {WWW_USER} {outfile} 2>/dev/null || true")
+        # Đặt quyền để Suricata có thể đọc được qua HTTP
+        os.system(f"chmod 644 {outfile} 2>/dev/null || true")
+        log(f"✓ Generated Suricata Rules: {outfile} ({len(values)} rules)")
+    
+    except Exception as e:
+        log(f"[!] Lỗi ghi Suricata rules {outfile}: {e}")
 
 def main():
     log(f"=== Start fetch from MISP (event {EVENT_ID}) ===")
@@ -151,6 +176,10 @@ def main():
     urls = fetch_values_from_misp("url", validate_ip=False)
     if urls:
         update_output_file(OUTPUT_URL, urls, validate_ip=False)
+
+    # Generate Suricata rules from IP sources
+    if src_ips:   
+        update_suricata_rules(OUTPUT_SURICATA, src_ips)
 
     log("=== Done ===")
 
