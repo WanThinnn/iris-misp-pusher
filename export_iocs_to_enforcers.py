@@ -143,7 +143,7 @@ def update_suricata_rules(outfile, values):
                 sid = start_sid + index
                 # Cấu trúc Rule: drop ip <IP> any -> any any (...)
                 # msg: Thông báo hiện trên Log
-                rule = f'drop ip {ip} any -> any any (msg:"ET CTI Blocklist IP {ip}"; reference:url,misp.cyberfortress.local; sid:{sid}; rev:1;)\n'
+                rule = f'drop ip {ip} any <> any any (msg:"ET CTI Blocklist IP {ip}"; reference:url,misp.cyberfortress.local; sid:{sid}; rev:1;)\n'
                 f.write(rule)
                 
         os.system(f"chown {WWW_USER} {outfile} 2>/dev/null || true")
