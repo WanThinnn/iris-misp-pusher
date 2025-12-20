@@ -30,21 +30,48 @@ class IrisMispInterface(IrisModuleInterface):
 
     def register_hooks(self, module_id):
         """
-        Register the hooks for the module
+        Register the hooks for the module based on configuration toggles
         """
+        self.module_id = module_id
+        module_conf = self.module_dict_conf
         self.log.info(f"Registering hooks for module {module_id}")
         
-        # Create a button labeled 'Push IOCs to MISP' on the IOC context menu (right-click)
-        status = self.register_to_hook(
-            module_id=module_id,
-            iris_hook_name='on_manual_trigger_ioc',
-            manual_hook_name='Push IOCs to MISP'
-        )
-        
-        if status.is_failure():
-            self.log.error(f"Failed to register hook: {status.get_message()}")
+        # === Manual Trigger Hook ===
+        if module_conf.get('misp_manual_hook_enabled', True):
+            status = self.register_to_hook(
+                module_id=module_id,
+                iris_hook_name='on_manual_trigger_ioc',
+                manual_hook_name='Push IOCs to MISP'
+            )
+            if status.is_failure():
+                self.log.error(f"Failed to register manual hook: {status.get_message()}")
+            else:
+                self.log.info("Successfully registered 'Push IOCs to MISP' manual hook")
         else:
-            self.log.info("Successfully registered 'Push IOCs to MISP' hook on IOC")
+            self.deregister_from_hook(module_id=module_id, iris_hook_name='on_manual_trigger_ioc')
+            self.log.info("Manual trigger hook disabled by config")
+        
+        # === Auto-push on IOC Create ===
+        if module_conf.get('misp_on_create_hook_enabled', False):
+            status = self.register_to_hook(module_id=module_id, iris_hook_name='on_postload_ioc_create')
+            if status.is_failure():
+                self.log.error(f"Failed to register on_create hook: {status.get_message()}")
+            else:
+                self.log.info("Successfully registered on_postload_ioc_create hook")
+        else:
+            self.deregister_from_hook(module_id=module_id, iris_hook_name='on_postload_ioc_create')
+            self.log.info("Auto-push on IOC create disabled by config")
+        
+        # === Auto-push on IOC Update ===
+        if module_conf.get('misp_on_update_hook_enabled', False):
+            status = self.register_to_hook(module_id=module_id, iris_hook_name='on_postload_ioc_update')
+            if status.is_failure():
+                self.log.error(f"Failed to register on_update hook: {status.get_message()}")
+            else:
+                self.log.info("Successfully registered on_postload_ioc_update hook")
+        else:
+            self.deregister_from_hook(module_id=module_id, iris_hook_name='on_postload_ioc_update')
+            self.log.info("Auto-push on IOC update disabled by config")
 
     def hooks_handler(self, hook_name, hook_ui_name, data):
         """
