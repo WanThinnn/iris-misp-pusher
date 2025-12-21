@@ -4,6 +4,7 @@ import re
 import json
 import requests
 import urllib3
+import ipaddress
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -49,6 +50,67 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def log(msg):
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}")
+
+
+def load_whitelist():
+    """Load whitelist từ .env, hỗ trợ cả IP đơn lẻ và CIDR (vd: 192.168.100.0/24)"""
+    whitelist_str = os.getenv("WHITE_LIST", "")
+    whitelist = []
+    
+    if not whitelist_str:
+        return whitelist
+    
+    for item in whitelist_str.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            # Thử parse như network (CIDR) trước
+            if "/" in item:
+                whitelist.append(ipaddress.ip_network(item, strict=False))
+            else:
+                # Parse như IP đơn lẻ
+                whitelist.append(ipaddress.ip_address(item))
+        except ValueError as e:
+            log(f"[!] Whitelist entry không hợp lệ '{item}': {e}")
+    
+    return whitelist
+
+
+def filter_whitelist(values, whitelist):
+    """Lọc bỏ các giá trị nằm trong whitelist (IP hoặc CIDR)"""
+    if not whitelist:
+        return values
+    
+    filtered = set()
+    removed = set()
+    
+    for val in values:
+        try:
+            ip = ipaddress.ip_address(val)
+            is_whitelisted = False
+            
+            for wl_item in whitelist:
+                if isinstance(wl_item, (ipaddress.IPv4Network, ipaddress.IPv6Network)):
+                    if ip in wl_item:
+                        is_whitelisted = True
+                        break
+                elif ip == wl_item:
+                    is_whitelisted = True
+                    break
+            
+            if is_whitelisted:
+                removed.add(val)
+            else:
+                filtered.add(val)
+        except ValueError:
+            # Không phải IP, giữ nguyên (domain, URL, etc.)
+            filtered.add(val)
+    
+    if removed:
+        log(f"[!] Filtered {len(removed)} whitelisted IPs: {', '.join(sorted(removed))}")
+    
+    return filtered
 
 
 def fetch_values_from_misp(attr_type, validate_ip=True):
@@ -177,20 +239,31 @@ def update_suricata_rules(outfile, values):
 def main():
     log(f"=== Start fetch from MISP (event {EVENT_ID}) ===")
     
+    # Load whitelist từ .env
+    whitelist = load_whitelist()
+    if whitelist:
+        log(f"Loaded {len(whitelist)} whitelist entries")
+    
     # 1. Khởi tạo set chứa tất cả IP cần block
     all_block_ips = set()
 
     # Fetch IP sources
     src_ips = fetch_values_from_misp("ip-src", validate_ip=True)
     if src_ips:
-        update_output_file(OUTPUT_SRC, src_ips, validate_ip=True)
-        all_block_ips.update(src_ips)  # <--- Gộp vào danh sách tổng
+        # Lọc whitelist trước khi xử lý
+        src_ips = filter_whitelist(src_ips, whitelist)
+        if src_ips:
+            update_output_file(OUTPUT_SRC, src_ips, validate_ip=True)
+            all_block_ips.update(src_ips)  # <--- Gộp vào danh sách tổng
     
     # Fetch IP destinations
     dst_ips = fetch_values_from_misp("ip-dst", validate_ip=True)
     if dst_ips:
-        update_output_file(OUTPUT_DST, dst_ips, validate_ip=True)
-        all_block_ips.update(dst_ips)  # <--- Gộp tiếp vào danh sách tổng
+        # Lọc whitelist trước khi xử lý
+        dst_ips = filter_whitelist(dst_ips, whitelist)
+        if dst_ips:
+            update_output_file(OUTPUT_DST, dst_ips, validate_ip=True)
+            all_block_ips.update(dst_ips)  # <--- Gộp tiếp vào danh sách tổng
     
     # Fetch domains
     domains = fetch_values_from_misp("domain", validate_ip=False)
